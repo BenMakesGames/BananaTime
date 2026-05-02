@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using BananaTime.Input;
 using BananaTime.Levels;
 using BananaTime.UI;
 using BenMakesGames.PlayPlayMini;
@@ -12,15 +13,15 @@ public sealed class TitleScreen: GameState
 {
     private GraphicsManager Graphics { get; }
     private GameStateManager GSM { get; }
-    private KeyboardManager Keyboard { get; }
+    private PlayerInput PlayerInput { get; }
 
     private readonly Menu Menu;
 
-    public TitleScreen(GraphicsManager graphics, GameStateManager gsm, KeyboardManager keyboard)
+    public TitleScreen(GraphicsManager graphics, GameStateManager gsm, PlayerInput playerInput)
     {
         Graphics = graphics;
         GSM = gsm;
-        Keyboard = keyboard;
+        PlayerInput = playerInput;
 
         Menu = new Menu(new MenuItem[]
         {
@@ -40,7 +41,7 @@ public sealed class TitleScreen: GameState
 
     public override void Input(GameTime gameTime)
     {
-        Menu.Input(Keyboard);
+        Menu.Input(PlayerInput);
     }
 
     public override void Draw(GameTime gameTime)

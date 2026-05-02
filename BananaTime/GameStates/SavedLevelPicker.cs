@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Linq;
+using BananaTime.Input;
 using BananaTime.Levels;
 using BananaTime.UI;
 using BenMakesGames.PlayPlayMini;
@@ -17,15 +18,17 @@ public sealed class SavedLevelPicker : GameState
     private GraphicsManager Graphics { get; }
     private GameStateManager GSM { get; }
     private KeyboardManager Keyboard { get; }
+    private PlayerInput PlayerInput { get; }
 
     private readonly Menu Menu;
     private string? LoadError;
 
-    public SavedLevelPicker(GraphicsManager graphics, GameStateManager gsm, KeyboardManager keyboard)
+    public SavedLevelPicker(GraphicsManager graphics, GameStateManager gsm, KeyboardManager keyboard, PlayerInput playerInput)
     {
         Graphics = graphics;
         GSM = gsm;
         Keyboard = keyboard;
+        PlayerInput = playerInput;
 
         var files = Directory.Exists(LevelDirectory)
             ? Directory.GetFiles(LevelDirectory, "*.json").OrderBy(f => f).ToArray()
@@ -47,7 +50,7 @@ public sealed class SavedLevelPicker : GameState
             return;
         }
 
-        Menu.Input(Keyboard);
+        Menu.Input(PlayerInput);
     }
 
     private void LoadAndEdit(string path)

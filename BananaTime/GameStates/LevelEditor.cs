@@ -38,6 +38,7 @@ public sealed class LevelEditor : GameState<LevelEditorConfig>
     {
         public readonly List<Vector2> Points = new();
         public bool IsConvexClockwise = true;
+        public bool IsKill;
 
         public void Add(Vector2 p) { Points.Add(p); Recompute(); }
         public void PopLast() { Points.RemoveAt(Points.Count - 1); Recompute(); }
@@ -73,7 +74,7 @@ public sealed class LevelEditor : GameState<LevelEditorConfig>
 
         foreach (var shape in config.Level.Shapes)
         {
-            var s = new EditorShape();
+            var s = new EditorShape { IsKill = shape.IsKill };
             foreach (var p in shape.Points) s.Add(p);
             if (s.Points.Count > 0) Shapes.Add(s);
         }
@@ -96,6 +97,13 @@ public sealed class LevelEditor : GameState<LevelEditorConfig>
         if (Keyboard.PressedKey(Keys.X))
         {
             ExportToConsole();
+            return;
+        }
+
+        if (Keyboard.PressedKey(Keys.K))
+        {
+            if (EditingShape.HasValue)
+                Shapes[EditingShape.Value].IsKill = !Shapes[EditingShape.Value].IsKill;
             return;
         }
 
@@ -198,7 +206,9 @@ public sealed class LevelEditor : GameState<LevelEditorConfig>
             var pts = shape.Points;
             if (pts.Count == 0) continue;
 
-            var color = shape.IsConvexClockwise ? Color.White : Color.Red;
+            var color = shape.IsKill
+                ? Color.Magenta
+                : shape.IsConvexClockwise ? Color.White : Color.Red;
             var implied = color * 0.5f;
 
             for (int j = 0; j < pts.Count - 1; j++)
@@ -243,7 +253,7 @@ public sealed class LevelEditor : GameState<LevelEditorConfig>
             Shapes = new List<LevelShape>(Shapes.Count)
         };
         foreach (var shape in Shapes)
-            level.Shapes.Add(new LevelShape { Points = new List<Vector2>(shape.Points) });
+            level.Shapes.Add(new LevelShape { Points = new List<Vector2>(shape.Points), IsKill = shape.IsKill });
 
         Console.WriteLine(LevelStorage.Serialize(level));
     }
@@ -251,10 +261,16 @@ public sealed class LevelEditor : GameState<LevelEditorConfig>
     private void DrawHud()
     {
         Graphics.DrawText("Font", 4, 4, $"editing: {PictureName}", Color.Yellow);
-        var modeText = EditingShape.HasValue ? $"shape {EditingShape.Value} ({Shapes[EditingShape.Value].Points.Count} pts)" : "no shape";
+        string modeText;
+        if (EditingShape.HasValue)
+        {
+            var s = Shapes[EditingShape.Value];
+            modeText = $"shape {EditingShape.Value} ({s.Points.Count} pts){(s.IsKill ? " [KILL]" : "")}";
+        }
+        else modeText = "no shape";
         Graphics.DrawText("Font", 4, 14, $"mode: {modeText}", Color.LightGray);
         Graphics.DrawText("Font", 4, 24, $"pan: {(int)PanOffset.X},{(int)PanOffset.Y}", Color.LightGray);
         Graphics.DrawText("Font", 4, 34, $"start: {(int)StartPosition.X},{(int)StartPosition.Y}", Color.LimeGreen);
-        Graphics.DrawText("Font", 4, Graphics.Height - 12, "WASD/arrows pan  L-click add/select  R-click undo  Space set start  X export  Esc exit", Color.LightGray);
+        Graphics.DrawText("Font", 4, Graphics.Height - 12, "WASD pan  L-click add/select  R-click undo  Space set start  K kill  X export  Esc exit", Color.LightGray);
     }
 }

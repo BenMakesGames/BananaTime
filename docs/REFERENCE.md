@@ -84,12 +84,22 @@ Signature mechanic: **6-second rewind**. Game records banana state every fixed s
 
 ## Input Bindings
 
-| Action | Keys |
-|---|---|
-| Rotate CW | D, Right, NumPad6 |
-| Rotate CCW | A, Left, NumPad4 |
-| Jump | W, Z, X, Space |
-| Rewind | R |
+Player-facing input goes through `Input/PlayerInput.cs` (`[AutoRegister]` singleton, `IServiceInput`). Service merges keyboard + up to four gamepads. Editor input and rewind/debug keys still read `KeyboardManager` directly.
+
+| Action | Keyboard | Gamepad |
+|---|---|---|
+| Rotate (signed) | D / Right / NumPad6 (CW), A / Left / NumPad4 (CCW) | Left stick X (analog, circular deadzone) |
+| Jump (100 ms buffer) | W, Z, X, Space | A button |
+| Menu direction | WASD / Arrows / NumPad 8/2/4/6 | D-pad, left stick (≥ 0.5 magnitude, larger axis wins) |
+| Menu accept | Enter | A button |
+| Rewind (Playing) | R | — |
+| Debug overlay (Playing) | F6 | — |
+| Back to title (pickers) | Esc | — |
+| Editor (pan / add / export) | WASD/Arrows, mouse, X | — (editor stays keyboard-only) |
+
+Keyboard accept is **Enter only** — the four jump keys do *not* double as menu accept. On gamepad, A intentionally serves both jump (Playing) and accept (menus).
+
+Direction precedence is keyboard → D-pad → left stick; first non-null wins. `DirectionPressed` is edge-only — the same direction held across frames fires once. `RotateClockwise` is the signed source (keyboard ±1 or any pad's left-stick X) with the largest absolute magnitude.
 
 ## File Layout
 
@@ -126,13 +136,19 @@ Banana spawns at world pixel `(120, 60)`. Falls onto terrain.
 
 HUD shows: grounded flag, angular velocity, linear velocity, rewind buffer fill (`x.xx/6s`, cyan when ready), `REWINDING` indicator during playback.
 
+## Kill Shapes
+
+- `LevelShape.IsKill` flag marks a shape as lethal. Editor toggle: select shape, press **K**. Kill shapes render magenta in the editor (priority over the white/red winding-validity color).
+- `LevelTerrain` builds kill shapes as **sensor** fixtures (`chain.IsSensor = true`) and tags the `Body.Tag` with the static sentinel `LevelTerrain.KillTag`. Sensors detect contact without solving manifolds, so the banana phases through and respawns rather than bouncing.
+- `Playing.FixedUpdate` walks `Banana.Body.ContactList` after `CaptureSnapshot()` and checks each touching contact's other body for `Body.Tag == LevelTerrain.KillTag`. On hit: position reset to `StartPositionMeters`, velocities + rotation zeroed, rewind buffer cleared.
+- Kill check runs **only on the forward branch** — never inside `StepRewind`. World isn't stepped during rewind so contacts wouldn't update anyway.
+- Pattern for future contact-driven mechanics (collectibles, level-end, checkpoints): set a `Body.Tag` sentinel on the body in `LevelTerrain`, walk `ContactList` in `Playing.FixedUpdate` and reference-equality-check the tag. Decouples identification from sensor/solid choice.
+
 ## Not Yet Implemented
 
-- Real levels (current is debug terrain only)
-- Death / respawn / level transitions
+- More levels (currently one: StoneHenge)
+- Level transitions / win condition
 - Sound, music
-- Title screen, menus
-- Level loader / level format
 
 ## Known Quirks
 

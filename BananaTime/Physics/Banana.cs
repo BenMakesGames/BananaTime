@@ -90,20 +90,16 @@ public sealed class Banana
         return true;
     }
 
-    public void RotateCW()
+    public void Rotate(float intensity)
     {
-        Body.AngularVelocity = PhysicsConstants.RotateAngularVelocityRadiansPerSecond;
+        Body.AngularVelocity = intensity * PhysicsConstants.RotateAngularVelocityRadiansPerSecond;
     }
 
-    public void RotateCCW()
+    public bool Jump()
     {
-        Body.AngularVelocity = -PhysicsConstants.RotateAngularVelocityRadiansPerSecond;
-    }
-
-    public void Jump()
-    {
-        if (!TryGetJumpDirection(out var dir)) return;
+        if (!TryGetJumpDirection(out var dir)) return false;
         var impulse = dir * (PhysicsConstants.JumpImpulseMetersPerSecond * Body.Mass);
         Body.ApplyLinearImpulse(impulse.ToAether());
+        return true;
     }
 }

@@ -1,4 +1,5 @@
 using System.Linq;
+using BananaTime.Input;
 using BananaTime.Levels;
 using BananaTime.UI;
 using BenMakesGames.PlayPlayMini;
@@ -13,14 +14,16 @@ public sealed class LevelPicker : GameState
     private GraphicsManager Graphics { get; }
     private GameStateManager GSM { get; }
     private KeyboardManager Keyboard { get; }
+    private PlayerInput PlayerInput { get; }
 
     private readonly Menu Menu;
 
-    public LevelPicker(GraphicsManager graphics, GameStateManager gsm, KeyboardManager keyboard)
+    public LevelPicker(GraphicsManager graphics, GameStateManager gsm, KeyboardManager keyboard, PlayerInput playerInput)
     {
         Graphics = graphics;
         GSM = gsm;
         Keyboard = keyboard;
+        PlayerInput = playerInput;
 
         var items = Graphics.Pictures.Keys
             .OrderBy(k => k)
@@ -39,7 +42,7 @@ public sealed class LevelPicker : GameState
             return;
         }
 
-        Menu.Input(Keyboard);
+        Menu.Input(PlayerInput);
     }
 
     public override void Draw(GameTime gameTime)

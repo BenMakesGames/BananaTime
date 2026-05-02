@@ -16,6 +16,7 @@ public sealed class LevelData
 public sealed class LevelShape
 {
     public List<Vector2> Points { get; set; } = new();
+    public bool IsKill { get; set; }
 }
 
 public static class LevelStorage

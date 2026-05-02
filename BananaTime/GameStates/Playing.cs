@@ -1,3 +1,4 @@
+using BananaTime.Input;
 using BananaTime.Levels;
 using BananaTime.Physics;
 using BenMakesGames.PlayPlayMini;
@@ -18,20 +19,15 @@ public sealed class Playing: GameState<PlayingConfig>
     private GameStateManager GSM { get; }
     private MouseManager Mouse { get; }
     private KeyboardManager Keyboard { get; }
-
-    private static readonly Keys[] RotateCWKeys = { Keys.D, Keys.Right, Keys.NumPad6 };
-    private static readonly Keys[] RotateCCWKeys = { Keys.A, Keys.Left, Keys.NumPad4 };
-    private static readonly Keys[] JumpKeys = { Keys.W, Keys.Z, Keys.X, Keys.Space };
+    private PlayerInput PlayerInput { get; }
 
     private World World;
     private Banana Banana;
     private LevelTerrain Terrain;
     private Camera Camera;
     private readonly string PictureName;
+    private readonly Vector2 StartPositionMeters;
 
-    private bool RotateCWHeld;
-    private bool RotateCCWHeld;
-    private bool JumpQueued;
     private bool RewindQueued;
     private bool ShowDebugInfo;
 
@@ -41,18 +37,20 @@ public sealed class Playing: GameState<PlayingConfig>
     private int RewindReadIndex;
     private bool IsRewinding;
 
-    public Playing(PlayingConfig config, GraphicsManager graphics, GameStateManager gsm, MouseManager mouse, KeyboardManager keyboard)
+    public Playing(PlayingConfig config, GraphicsManager graphics, GameStateManager gsm, MouseManager mouse, KeyboardManager keyboard, PlayerInput playerInput)
     {
         Graphics = graphics;
         GSM = gsm;
         Mouse = mouse;
         Keyboard = keyboard;
+        PlayerInput = playerInput;
 
         PictureName = config.Level.Picture;
+        StartPositionMeters = config.Level.StartPosition * PhysicsConstants.MetersPerPixel;
 
         World = new World(new AetherVector2(0f, PhysicsConstants.Gravity));
         Terrain = new LevelTerrain(World, config.Level);
-        Banana = new Banana(World, config.Level.StartPosition * PhysicsConstants.MetersPerPixel);
+        Banana = new Banana(World, StartPositionMeters);
 
         Vector2? worldSize = Graphics.Pictures.TryGetValue(PictureName, out var pic)
             ? new Vector2(pic.Width, pic.Height)
@@ -66,16 +64,10 @@ public sealed class Playing: GameState<PlayingConfig>
 
         if (IsRewinding)
         {
-            RotateCWHeld = false;
-            RotateCCWHeld = false;
-            JumpQueued = false;
             RewindQueued = false;
             return;
         }
 
-        RotateCWHeld = Keyboard.AnyKeyDown(RotateCWKeys);
-        RotateCCWHeld = Keyboard.AnyKeyDown(RotateCCWKeys);
-        if (Keyboard.PressedAnyKey(JumpKeys)) JumpQueued = true;
         if (Keyboard.PressedKey(Keys.R)) RewindQueued = true;
     }
 
@@ -97,17 +89,43 @@ public sealed class Playing: GameState<PlayingConfig>
             }
         }
 
-        if (RotateCWHeld && !RotateCCWHeld) Banana.RotateCW();
-        else if (RotateCCWHeld && !RotateCWHeld) Banana.RotateCCW();
+        var rotate = PlayerInput.RotateClockwise;
+        if (rotate != 0f) Banana.Rotate(rotate);
 
-        if (JumpQueued)
-        {
-            JumpQueued = false;
-            Banana.Jump();
-        }
+        // Peek-then-consume: only drain the 100 ms buffer once the jump actually fires
+        // (e.g., on landing). Jump() returns false when no contacts exist.
+        if (PlayerInput.JumpBuffered && Banana.Jump())
+            PlayerInput.ConsumeJump();
 
         World.Step(PhysicsConstants.FixedTimestepSeconds);
         CaptureSnapshot();
+
+        if (IsTouchingKillShape()) Respawn();
+    }
+
+    private bool IsTouchingKillShape()
+    {
+        var ce = Banana.Body.ContactList;
+        while (ce != null)
+        {
+            var contact = ce.Contact;
+            if (contact.IsTouching)
+            {
+                var otherBody = contact.FixtureA.Body == Banana.Body ? contact.FixtureB.Body : contact.FixtureA.Body;
+                if (otherBody.Tag == LevelTerrain.KillTag) return true;
+            }
+            ce = ce.Next;
+        }
+        return false;
+    }
+
+    private void Respawn()
+    {
+        Banana.Body.Position = StartPositionMeters.ToAether();
+        Banana.Body.Rotation = 0f;
+        Banana.Body.LinearVelocity = AetherVector2.Zero;
+        Banana.Body.AngularVelocity = 0f;
+        ClearRewindBuffer();
     }
 
     private void CaptureSnapshot()
@@ -148,6 +166,8 @@ public sealed class Playing: GameState<PlayingConfig>
     {
         IsRewinding = false;
         ClearRewindBuffer();
+        // Drain any jump pressed during rewind so it doesn't fire on the first post-rewind frame.
+        PlayerInput.ConsumeJump();
     }
 
     private void ClearRewindBuffer()
@@ -233,7 +253,7 @@ public sealed class Playing: GameState<PlayingConfig>
             Graphics.DrawText("Font", 4, 38, $"rewind: {bufferSeconds:0.00}/{PhysicsConstants.RewindCaptureSeconds}s", rewindColor);
         }
 
-        Graphics.DrawText("Font", 4, Graphics.Height - 12, "A/D rotate, Space jump, R rewind", Color.LightGray);
+        Graphics.DrawText("Font", 4, Graphics.Height - 12, "rotate / jump / R: rewind", Color.LightGray);
     }
 
     private void DrawLine(Vector2 a, Vector2 b, Color color, float thickness)

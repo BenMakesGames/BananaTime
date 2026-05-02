@@ -9,6 +9,8 @@ namespace BananaTime.Physics;
 
 public sealed class LevelTerrain
 {
+    public static readonly object KillTag = new();
+
     public IReadOnlyList<XnaVector2[]> ShapesPixels => _shapesPixels;
 
     private readonly List<XnaVector2[]> _shapesPixels;
@@ -33,6 +35,12 @@ public sealed class LevelTerrain
             var chain = px.Length >= 3 ? body.CreateLoopShape(verts) : body.CreateChainShape(verts);
             chain.Friction = 0.8f;
             chain.Restitution = 0.0f;
+
+            if (shape.IsKill)
+            {
+                body.Tag = KillTag;
+                chain.IsSensor = true;
+            }
         }
     }
 }
