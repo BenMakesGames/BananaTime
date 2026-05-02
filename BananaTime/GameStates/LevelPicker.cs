@@ -1,4 +1,5 @@
 using System.Linq;
+using BananaTime.Levels;
 using BananaTime.UI;
 using BenMakesGames.PlayPlayMini;
 using BenMakesGames.PlayPlayMini.Services;
@@ -23,7 +24,7 @@ public sealed class LevelPicker : GameState
 
         var items = Graphics.Pictures.Keys
             .OrderBy(k => k)
-            .Select(k => new MenuItem(k, () => GSM.ChangeState<LevelEditor, LevelEditorConfig>(new LevelEditorConfig(k))))
+            .Select(k => new MenuItem(k, () => GSM.ChangeState<LevelEditor, LevelEditorConfig>(new LevelEditorConfig(new LevelData { Picture = k }))))
             .Append(new MenuItem("Back", () => GSM.ChangeState<TitleScreen>()))
             .ToArray();
 

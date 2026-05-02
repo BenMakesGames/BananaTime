@@ -1,8 +1,7 @@
 using System;
-using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Text.Json;
+using BananaTime.Levels;
 using BananaTime.UI;
 using BenMakesGames.PlayPlayMini;
 using BenMakesGames.PlayPlayMini.Services;
@@ -55,27 +54,8 @@ public sealed class SavedLevelPicker : GameState
     {
         try
         {
-            using var doc = JsonDocument.Parse(File.ReadAllText(path));
-            var root = doc.RootElement;
-
-            var picture = root.GetProperty("picture").GetString()
-                ?? throw new InvalidDataException("missing 'picture' field");
-
-            var shapes = new List<IReadOnlyList<Vector2>>();
-            foreach (var poly in root.GetProperty("editorPolygons").EnumerateArray())
-            {
-                var pts = new List<Vector2>();
-                foreach (var pt in poly.GetProperty("points").EnumerateArray())
-                {
-                    pts.Add(new Vector2(
-                        pt.GetProperty("x").GetSingle(),
-                        pt.GetProperty("y").GetSingle()
-                    ));
-                }
-                shapes.Add(pts);
-            }
-
-            GSM.ChangeState<LevelEditor, LevelEditorConfig>(new LevelEditorConfig(picture, shapes));
+            var level = LevelStorage.Load(path);
+            GSM.ChangeState<LevelEditor, LevelEditorConfig>(new LevelEditorConfig(level));
         }
         catch (Exception ex)
         {

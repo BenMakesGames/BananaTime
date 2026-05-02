@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
-using System.Text.Json;
-using BananaTime.Physics;
+using BananaTime.Levels;
 using BenMakesGames.PlayPlayMini;
 using BenMakesGames.PlayPlayMini.GraphicsExtensions;
 using BenMakesGames.PlayPlayMini.Services;
@@ -11,7 +10,7 @@ using Microsoft.Xna.Framework.Input;
 
 namespace BananaTime.GameStates;
 
-public sealed record LevelEditorConfig(string PictureName, IReadOnlyList<IReadOnlyList<Vector2>>? InitialShapes = null);
+public sealed record LevelEditorConfig(LevelData Level);
 
 public sealed class LevelEditor : GameState<LevelEditorConfig>
 {
@@ -33,6 +32,7 @@ public sealed class LevelEditor : GameState<LevelEditorConfig>
     private readonly List<EditorShape> Shapes = new();
     private int? EditingShape;
     private Vector2 PanOffset;
+    private Vector2 StartPosition;
 
     private sealed class EditorShape
     {
@@ -64,20 +64,18 @@ public sealed class LevelEditor : GameState<LevelEditorConfig>
 
     public LevelEditor(LevelEditorConfig config, GraphicsManager graphics, GameStateManager gsm, MouseManager mouse, KeyboardManager keyboard)
     {
-        PictureName = config.PictureName;
+        PictureName = config.Level.Picture;
+        StartPosition = config.Level.StartPosition;
         Graphics = graphics;
         GSM = gsm;
         Mouse = mouse;
         Keyboard = keyboard;
 
-        if (config.InitialShapes != null)
+        foreach (var shape in config.Level.Shapes)
         {
-            foreach (var pts in config.InitialShapes)
-            {
-                var s = new EditorShape();
-                foreach (var p in pts) s.Add(p);
-                if (s.Points.Count > 0) Shapes.Add(s);
-            }
+            var s = new EditorShape();
+            foreach (var p in shape.Points) s.Add(p);
+            if (s.Points.Count > 0) Shapes.Add(s);
         }
     }
 
@@ -104,6 +102,12 @@ public sealed class LevelEditor : GameState<LevelEditorConfig>
         if (!Mouse.IsInWindow()) return;
 
         var mousePic = ScreenToPicture(new Vector2(Mouse.X, Mouse.Y));
+
+        if (Keyboard.PressedKey(Keys.Space))
+        {
+            StartPosition = mousePic;
+            return;
+        }
 
         if (Mouse.LeftClicked)
         {
@@ -173,7 +177,17 @@ public sealed class LevelEditor : GameState<LevelEditorConfig>
             Graphics.DrawPicture(PictureName, -(int)PanOffset.X, -(int)PanOffset.Y);
 
         DrawShapes();
+        DrawStart();
         DrawHud();
+    }
+
+    private void DrawStart()
+    {
+        var s = PictureToScreen(StartPosition);
+        int x = (int)s.X;
+        int y = (int)s.Y;
+        Graphics.DrawFilledCircle(x, y, 5, Color.LimeGreen);
+        Graphics.DrawFilledCircle(x, y, 2, Color.Black);
     }
 
     private void DrawShapes()
@@ -222,24 +236,16 @@ public sealed class LevelEditor : GameState<LevelEditorConfig>
 
     private void ExportToConsole()
     {
-        var editorPolygons = new List<object>(Shapes.Count);
-        var polygons = new List<object>(Shapes.Count);
-
-        foreach (var shape in Shapes)
+        var level = new LevelData
         {
-            var ptsPx = new List<object>(shape.Points.Count);
-            var ptsM = new List<object>(shape.Points.Count);
-            foreach (var p in shape.Points)
-            {
-                ptsPx.Add(new { x = p.X, y = p.Y });
-                ptsM.Add(new { x = p.X * PhysicsConstants.MetersPerPixel, y = p.Y * PhysicsConstants.MetersPerPixel });
-            }
-            editorPolygons.Add(new { points = ptsPx, isConvexClockwise = shape.IsConvexClockwise });
-            polygons.Add(ptsM);
-        }
+            Picture = PictureName,
+            StartPosition = StartPosition,
+            Shapes = new List<LevelShape>(Shapes.Count)
+        };
+        foreach (var shape in Shapes)
+            level.Shapes.Add(new LevelShape { Points = new List<Vector2>(shape.Points) });
 
-        var payload = new { picture = PictureName, editorPolygons, polygons };
-        Console.WriteLine(JsonSerializer.Serialize(payload, new JsonSerializerOptions { WriteIndented = true }));
+        Console.WriteLine(LevelStorage.Serialize(level));
     }
 
     private void DrawHud()
@@ -248,6 +254,7 @@ public sealed class LevelEditor : GameState<LevelEditorConfig>
         var modeText = EditingShape.HasValue ? $"shape {EditingShape.Value} ({Shapes[EditingShape.Value].Points.Count} pts)" : "no shape";
         Graphics.DrawText("Font", 4, 14, $"mode: {modeText}", Color.LightGray);
         Graphics.DrawText("Font", 4, 24, $"pan: {(int)PanOffset.X},{(int)PanOffset.Y}", Color.LightGray);
-        Graphics.DrawText("Font", 4, Graphics.Height - 12, "WASD/arrows pan  L-click add/select  R-click undo  X export  Esc exit", Color.LightGray);
+        Graphics.DrawText("Font", 4, 34, $"start: {(int)StartPosition.X},{(int)StartPosition.Y}", Color.LimeGreen);
+        Graphics.DrawText("Font", 4, Graphics.Height - 12, "WASD/arrows pan  L-click add/select  R-click undo  Space set start  X export  Esc exit", Color.LightGray);
     }
 }

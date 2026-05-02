@@ -6,10 +6,11 @@ Authoring tool for tracing geometry on top of bitmap level art.
 
 | State | Role |
 |---|---|
-| `LevelPicker` | Lists all loaded `Pictures` via `Menu`. Selecting one transitions to `LevelEditor` with a `LevelEditorConfig(PictureName)`. `Esc` / `Back` returns to `TitleScreen`. |
-| `LevelEditor` | `GameState<LevelEditorConfig>`. Mouse-driven shape editor over the chosen picture. |
+| `LevelPicker` | Lists all loaded `Pictures` via `Menu`. Selecting one transitions to `LevelEditor` with a `LevelEditorConfig(new LevelData { Picture = k })`. `Esc` / `Back` returns to `TitleScreen`. |
+| `SavedLevelPicker` | Lists `*.json` files under `Content/Levels/`. Selecting one calls `LevelStorage.Load(path)` and transitions to `LevelEditor` with the loaded `LevelData`. |
+| `LevelEditor` | `GameState<LevelEditorConfig>` where `LevelEditorConfig` carries a single `LevelData`. Mouse-driven shape editor over the chosen picture. |
 
-`TitleScreen` exposes the editor through a `Level Editor` menu item that transitions to `LevelPicker`.
+`TitleScreen` exposes the editor through `New Level` (→ `LevelPicker`) and `Edit Saved Level` (→ `SavedLevelPicker`).
 
 ## Input model
 
@@ -20,6 +21,8 @@ Authoring tool for tracing geometry on top of bitmap level art.
 | Left-click on existing point (any shape) | Select that shape. Hit radius = `PointHitRadius` (5 px screen). |
 | Right-click, shape selected | Pop last point. If shape now empty, delete the shape and exit edit mode. |
 | Right-click, no shape selected | No-op. |
+| `Space` | Set the level's start position to the current mouse position (picture-space). Always overwrites; default is `(0, 0)`. |
+| `X` | Serialize the current `LevelData` via `LevelStorage.Serialize` and write it to `Console.Out`. |
 | `Esc`, shape selected | Exit edit mode (keep shape). |
 | `Esc`, no shape selected | Return to `LevelPicker`. |
 | `WASD` / arrows / numpad `8 6 2 4` | Pan view at `PanSpeed` px/s (continuous, dt-scaled in `Update`). |
@@ -30,11 +33,12 @@ Mouse is the editor's primary input. The rest of the game uses no cursor; `Level
 
 - Picture drawn at `(-PanOffset.X, -PanOffset.Y)` (integer-truncated).
 - For each shape:
-  - `DrawFilledCircle` per point at `PointRadius` (3 px), white.
-  - White line between consecutive points.
-  - Implied closing edge from last point back to first drawn at 50% alpha white (`Color.White * 0.5f`).
+  - `DrawFilledCircle` per point at `PointRadius` (3 px), white if convex-CW else red.
+  - Connecting line between consecutive points (same color).
+  - Implied closing edge from last point back to first drawn at 50% alpha (`color * 0.5f`).
+- Start position drawn as a 5 px lime-green disc with a 2 px black core at the current `StartPosition` (picture-space, panned with the view).
 - Lines drawn via the same `WhitePixel` rotated-rect trick as `Playing`/`TestTerrain`.
-- HUD: picture name, current edit-mode (shape index + point count), pan offset, control hints.
+- HUD: picture name, current edit-mode (shape index + point count), pan offset, start coord, control hints.
 
 ## Constants (in `LevelEditor.cs`)
 
@@ -84,11 +88,46 @@ using XnaVector2    = Microsoft.Xna.Framework.Vector2;
 using AetherVector2 = nkast.Aether.Physics2D.Common.Vector2;
 ```
 
-### Picture-pixel point → Aether vertex (export pipeline, not yet implemented)
+### Picture-pixel point → Aether vertex (gameplay loader, not yet implemented)
 ```csharp
 var aetherVert = (picturePoint * PhysicsConstants.MetersPerPixel).ToAether();
 ```
-Feed into `Vertices` and either `CreateChainShape` (open) or `CreatePolygon` (convex closed).
+Feed into `Vertices` and either `CreateChainShape` (open) or `CreatePolygon` (convex closed). Note: picture-pixel coords are the canonical level format on disk — meters are derived at body-creation time, not persisted.
+
+## Level data model
+
+`BananaTime/Levels/LevelData.cs` defines a single POCO that owns a level end-to-end:
+
+```csharp
+public sealed class LevelData
+{
+    public string Picture { get; set; } = "";
+    public Vector2 StartPosition { get; set; }       // picture-space pixels
+    public List<LevelShape> Shapes { get; set; } = new();
+}
+
+public sealed class LevelShape
+{
+    public List<Vector2> Points { get; set; } = new();   // picture-space pixels
+}
+```
+
+`LevelEditorConfig` is just `(LevelData Level)` — both `LevelPicker` (new level — `new LevelData { Picture = k }`) and `SavedLevelPicker` (loaded level — `LevelStorage.Load(path)`) construct one and pass it through.
+
+`LevelStorage.Load(path)` / `LevelStorage.Serialize(level)` round-trip via `System.Text.Json` with camelCase naming and a `Vector2JsonConverter` that emits `{"x":…,"y":…}`. Anything not in `LevelData` (convexity flag, meters-space copies of points) is **derived at use-site, not persisted** — the JSON file is the canonical source for picture, start, and shape points only.
+
+### On-disk shape (`Content/Levels/*.json`)
+```json
+{
+  "picture": "StoneHenge",
+  "startPosition": { "x": 0, "y": 0 },
+  "shapes": [
+    { "points": [ { "x": 202, "y": 1808.18 }, ... ] }
+  ]
+}
+```
+
+Export currently writes to `Console.Out` (press `X`); copy-paste into a `Content/Levels/<name>.json` file to make it loadable from `SavedLevelPicker`.
 
 ## Winding order — the big gotcha
 
@@ -110,5 +149,5 @@ Chain shapes (open paths) don't have an "inside" so winding only affects one-sid
 - **Cursor lifecycle.** Editor flips the cursor on/off via `Enter`/`Leave`. If you add a new path out of the editor, make sure `Leave()` runs (or set the cursor explicitly) — `GSM.ChangeState` handles this, but a hard exit wouldn't.
 - **`PressedAnyKey` vs `KeyDown` vs `PressedKey`.** Pan uses `AnyKeyDown(IList<Keys>)` — held state, fires every frame. Discrete actions (Esc) use `PressedKey` — single edge.
 - **`Pictures` may not be loaded when the picker is built** in principle; `LoadContent` defers non-`PreLoaded` assets to a background `Task.Run`. In practice we transition through `Startup` which waits on `Graphics.FullyLoaded`, so `LevelPicker` always sees the full set.
-- **No persistence.** Shapes are plain `List<List<Vector2>>` in memory; closing the state drops them.
+- **Half-baked persistence.** `X` exports JSON to `Console.Out`; saving to disk is a manual copy-paste into `Content/Levels/<name>.json`. Closing the editor without exporting drops the in-memory shapes.
 - **Shape selection is "first hit wins"** — iterates shapes in insertion order, returns first point within hit radius. Overlapping points from different shapes will always select the older shape.
