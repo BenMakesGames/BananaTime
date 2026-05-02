@@ -77,6 +77,7 @@ Signature mechanic: **6-second rewind**. Game records banana state every fixed s
 ## Camera
 
 - World-space camera (top-left in world pixels). Follows banana with **deadzone**: ignores motion while banana is within `CameraDeadzoneRadiusPixels` of view center; once outside, decays toward centering using frame-rate-independent exponential damping (`1 - exp(-rate * dt)`); stops the moment banana re-enters radius.
+- Clamped to background-picture bounds (`[0, picSize - viewSize]` per axis) when `Camera.WorldSizePixels` is set, so the view never reveals space beyond the level art.
 - Camera follow runs in `Update` (not `FixedUpdate`) using real elapsed seconds.
 - Position snapped to integer pixels in `WorldToScreen` to avoid pixel-art subpixel jitter.
 - PPM uses `SpriteSortMode.Immediate` SpriteBatch with no transform hook → no matrix-based camera. Implemented as manual offset via `Camera.WorldToScreen(worldPx)` per draw call. HUD draws screen-space, unaffected.
@@ -132,7 +133,6 @@ HUD shows: grounded flag, angular velocity, linear velocity, rewind buffer fill 
 - Sound, music
 - Title screen, menus
 - Level loader / level format
-- Camera bounds (currently unbounded in both directions)
 
 ## Known Quirks
 

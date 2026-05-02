@@ -53,7 +53,11 @@ public sealed class Playing: GameState<PlayingConfig>
         World = new World(new AetherVector2(0f, PhysicsConstants.Gravity));
         Terrain = new LevelTerrain(World, config.Level);
         Banana = new Banana(World, config.Level.StartPosition * PhysicsConstants.MetersPerPixel);
-        Camera = new Camera(new Vector2(Graphics.Width, Graphics.Height), Banana.PositionPixels);
+
+        Vector2? worldSize = Graphics.Pictures.TryGetValue(PictureName, out var pic)
+            ? new Vector2(pic.Width, pic.Height)
+            : null;
+        Camera = new Camera(new Vector2(Graphics.Width, Graphics.Height), Banana.PositionPixels, worldSize);
     }
 
     public override void Input(GameTime gameTime)
