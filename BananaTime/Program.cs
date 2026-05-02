@@ -26,6 +26,8 @@ gsmBuilder
 
         new PictureMeta("StoneHenge", "Graphics/StoneHenge"),
 
+        new PixelShaderMeta("VcrRewind", "Shaders/VcrRewind"),
+
         // new FontMeta(...)
         // new PictureMeta(...)
         // new SpriteSheetMeta(...)

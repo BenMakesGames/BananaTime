@@ -1,3 +1,4 @@
+using System;
 using BananaTime.Input;
 using BananaTime.Levels;
 using BananaTime.Physics;
@@ -36,6 +37,12 @@ public sealed class Playing: GameState<PlayingConfig>
     private int RewindCount;
     private int RewindReadIndex;
     private bool IsRewinding;
+
+    private enum ChargeState { Idle, OnSurface, InGrace }
+    private ChargeState _chargeState;
+    private float _chargeElapsedSeconds;
+    private Vector2 _trackedJumpDirection;
+    private float _graceRemainingSeconds;
 
     public Playing(PlayingConfig config, GraphicsManager graphics, GameStateManager gsm, MouseManager mouse, KeyboardManager keyboard, PlayerInput playerInput)
     {
@@ -89,18 +96,129 @@ public sealed class Playing: GameState<PlayingConfig>
             }
         }
 
-        var rotate = PlayerInput.RotateClockwise;
-        if (rotate != 0f) Banana.Rotate(rotate);
+        UpdateChargeStateMachine();
 
-        // Peek-then-consume: only drain the 100 ms buffer once the jump actually fires
-        // (e.g., on landing). Jump() returns false when no contacts exist.
-        if (PlayerInput.JumpBuffered && Banana.Jump())
-            PlayerInput.ConsumeJump();
+        // Rotation is locked while charging (both OnSurface and InGrace sub-states).
+        if (_chargeState == ChargeState.Idle)
+        {
+            var rotate = PlayerInput.RotateClockwise;
+            if (rotate != 0f) Banana.Rotate(rotate);
+        }
 
         World.Step(PhysicsConstants.FixedTimestepSeconds);
         CaptureSnapshot();
 
         if (IsTouchingKillShape()) Respawn();
+    }
+
+    private void UpdateChargeStateMachine()
+    {
+        switch (_chargeState)
+        {
+            case ChargeState.Idle:
+                if (!PlayerInput.JumpHeld) return;
+                if (Banana.TryGetJumpDirection(out var startDir))
+                    EnterCharging(startDir);
+                // Else: airborne with held button. Stay Idle; we'll re-check next frame
+                // and transition the moment a contact appears.
+                return;
+
+            case ChargeState.OnSurface:
+                if (!PlayerInput.JumpHeld)
+                {
+                    if (_chargeElapsedSeconds >= PhysicsConstants.MinChargeSecondsToFire)
+                        Banana.ApplyJumpImpulse(_trackedJumpDirection, ComputeChargeImpulseSpeed());
+                    ExitChargingToIdle();
+                    return;
+                }
+
+                if (!Banana.TryGetJumpDirection(out var current))
+                {
+                    // No contacts: enter grace with tracked frozen at previous-frame value.
+                    EnterGrace();
+                    return;
+                }
+
+                if (Vector2.Dot(_trackedJumpDirection, current) < PhysicsConstants.MaxJumpAngleDeviationCosine)
+                {
+                    // Deviation > 45°: enter grace, freeze tracked at previous-frame value.
+                    EnterGrace();
+                    return;
+                }
+
+                _chargeElapsedSeconds = System.Math.Min(
+                    _chargeElapsedSeconds + PhysicsConstants.FixedTimestepSeconds,
+                    PhysicsConstants.MaxChargeSeconds);
+                _trackedJumpDirection = current;
+                return;
+
+            case ChargeState.InGrace:
+                _graceRemainingSeconds -= PhysicsConstants.FixedTimestepSeconds;
+
+                if (!PlayerInput.JumpHeld)
+                {
+                    // Coyote release: fires regardless of current contact state, along the frozen tracked angle.
+                    Banana.ApplyJumpImpulse(_trackedJumpDirection, ComputeChargeImpulseSpeed());
+                    ExitChargingToIdle();
+                    return;
+                }
+
+                if (_graceRemainingSeconds <= 0f)
+                {
+                    // Grace expired: jump lost.
+                    ExitChargingToIdle();
+                    return;
+                }
+
+                if (Banana.TryGetJumpDirection(out var recovered)
+                    && Vector2.Dot(_trackedJumpDirection, recovered) >= PhysicsConstants.MaxJumpAngleDeviationCosine)
+                {
+                    // Re-acquired a valid surface within the 45° window: resume charging,
+                    // re-syncing tracked to the new direction. Charge does not increment this frame.
+                    _trackedJumpDirection = recovered;
+                    _graceRemainingSeconds = 0f;
+                    _chargeState = ChargeState.OnSurface;
+                }
+                return;
+        }
+    }
+
+    private void EnterCharging(Vector2 initialDirection)
+    {
+        _chargeState = ChargeState.OnSurface;
+        _chargeElapsedSeconds = 0f;
+        _trackedJumpDirection = initialDirection;
+        _graceRemainingSeconds = 0f;
+        Banana.SetFixtureFriction(PhysicsConstants.BananaFriction * PhysicsConstants.ChargingFrictionMultiplier);
+        // Drain the buffered-jump latch so it doesn't double-count if the player taps and re-taps.
+        PlayerInput.ConsumeJump();
+    }
+
+    private void EnterGrace()
+    {
+        _chargeState = ChargeState.InGrace;
+        _graceRemainingSeconds = PhysicsConstants.LostContactGraceSeconds;
+        // _trackedJumpDirection retains its previous-frame value (frozen).
+        // _chargeElapsedSeconds does not increment this frame.
+    }
+
+    private void ExitChargingToIdle()
+    {
+        _chargeState = ChargeState.Idle;
+        _chargeElapsedSeconds = 0f;
+        _trackedJumpDirection = Vector2.Zero;
+        _graceRemainingSeconds = 0f;
+        Banana.SetFixtureFriction(PhysicsConstants.BananaFriction);
+    }
+
+    private float ComputeChargeImpulseSpeed()
+    {
+        float min = PhysicsConstants.MinChargeSecondsToFire;
+        float max = PhysicsConstants.MaxChargeSeconds;
+        float clamped = MathHelper.Clamp(_chargeElapsedSeconds, min, max);
+        float t = (max - min) > 0f ? (clamped - min) / (max - min) : 0f;
+        float scale = MathHelper.Lerp(PhysicsConstants.MinJumpImpulseScale, PhysicsConstants.MaxJumpImpulseScale, t);
+        return PhysicsConstants.JumpImpulseMetersPerSecond * scale;
     }
 
     private bool IsTouchingKillShape()
@@ -121,6 +239,7 @@ public sealed class Playing: GameState<PlayingConfig>
 
     private void Respawn()
     {
+        if (_chargeState != ChargeState.Idle) ExitChargingToIdle();
         Banana.Body.Position = StartPositionMeters.ToAether();
         Banana.Body.Rotation = 0f;
         Banana.Body.LinearVelocity = AetherVector2.Zero;
@@ -137,6 +256,7 @@ public sealed class Playing: GameState<PlayingConfig>
 
     private void BeginRewind()
     {
+        if (_chargeState != ChargeState.Idle) ExitChargingToIdle();
         IsRewinding = true;
         // Most recent capture sits one slot behind head.
         RewindReadIndex = (RewindHead - 1 + PhysicsConstants.RewindFrames) % PhysicsConstants.RewindFrames;
@@ -183,12 +303,28 @@ public sealed class Playing: GameState<PlayingConfig>
 
     public override void Draw(GameTime gameTime)
     {
-        Graphics.Clear(new Color(40, 40, 60));
+        if (IsRewinding)
+        {
+            using (Graphics.WithSceneShader("VcrRewind", e =>
+                e.Parameters["Time"].SetValue((float)gameTime.TotalGameTime.TotalSeconds)))
+            {
+                DrawWorld();
+            }
+        }
+        else
+        {
+            DrawWorld();
+        }
 
+        DrawHud();
+    }
+
+    private void DrawWorld()
+    {
+        Graphics.Clear(new Color(40, 40, 60));
         DrawBackground();
         if (ShowDebugInfo) DrawTerrain();
         DrawBanana();
-        DrawHud();
     }
 
     private void DrawBackground()
@@ -214,16 +350,33 @@ public sealed class Playing: GameState<PlayingConfig>
     {
         var bananaScreenPx = Camera.WorldToScreen(Banana.PositionPixels);
         var rot = Banana.Rotation;
-        var cos = (float)System.Math.Cos(rot);
-        var sin = (float)System.Math.Sin(rot);
 
-        // PPM rotates around sprite center. Offset draw position so the centroid
-        // (body origin) ends up at the body's screen position after rotation.
-        var d = PhysicsConstants.BananaSpriteCenterMinusCentroidPixels;
-        var rotatedOffset = new Vector2(d.X * cos - d.Y * sin, d.X * sin + d.Y * cos);
-        var drawCenter = bananaScreenPx + rotatedOffset;
+        // Squish along banana-local Y (long axis) — at body rotation 0 this aligns roughly
+        // with the surface normal on flat ground. Frozen during InGrace.
+        var scale = Vector2.One;
+        if (_chargeState != ChargeState.Idle)
+        {
+            float t = MathHelper.Clamp(_chargeElapsedSeconds / PhysicsConstants.MaxChargeSeconds, 0f, 1f);
+            float depth = PhysicsConstants.MaxSquishDepth * t;
+            scale = new Vector2(1f, 1f - depth);
+        }
 
-        Graphics.DrawPictureRotatedAndScaled("Banana", (int)drawCenter.X, (int)drawCenter.Y, rot, 1f, Color.White);
+        // SpriteBatch.Draw rotates and scales around `origin` (sprite-local pixels) and
+        // places that origin at `position`. Setting origin to the centroid means the
+        // body's centroid lands on the body's screen position with no extra compensation.
+        var pos = new Vector2(MathF.Round(bananaScreenPx.X), MathF.Round(bananaScreenPx.Y));
+
+        Graphics.SpriteBatch.Draw(
+            Graphics.Pictures["Banana"],
+            pos,
+            null,
+            Color.White,
+            rot,
+            PhysicsConstants.BananaSpriteOriginPixels,
+            scale,
+            SpriteEffects.None,
+            0f
+        );
 
         if (ShowDebugInfo)
         {

@@ -95,11 +95,15 @@ public sealed class Banana
         Body.AngularVelocity = intensity * PhysicsConstants.RotateAngularVelocityRadiansPerSecond;
     }
 
-    public bool Jump()
+    public void ApplyJumpImpulse(Vector2 direction, float speedMetersPerSecond)
     {
-        if (!TryGetJumpDirection(out var dir)) return false;
-        var impulse = dir * (PhysicsConstants.JumpImpulseMetersPerSecond * Body.Mass);
+        var impulse = direction * (speedMetersPerSecond * Body.Mass);
         Body.ApplyLinearImpulse(impulse.ToAether());
-        return true;
+    }
+
+    public void SetFixtureFriction(float friction)
+    {
+        foreach (var fixture in Body.FixtureList)
+            fixture.Friction = friction;
     }
 }

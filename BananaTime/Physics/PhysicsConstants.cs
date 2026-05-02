@@ -23,6 +23,25 @@ public static class PhysicsConstants
     public const float JumpImpulseMetersPerSecond = 2.5f;
     public const float RotateAngularVelocityRadiansPerSecond = 6f;
 
+    // Charge jump tuning. Hold below MinChargeSecondsToFire = no fire (a tap).
+    // At/above MinChargeSecondsToFire = fires; impulse scales linearly between
+    // MinJumpImpulseScale and MaxJumpImpulseScale (relative to JumpImpulseMetersPerSecond)
+    // up to MaxChargeSeconds.
+    public const float MinChargeSecondsToFire = 0.1f;
+    public const float MaxChargeSeconds = 0.8f;
+    public const float MinJumpImpulseScale = 0.4f;
+    public const float MaxJumpImpulseScale = 1.6f;
+    // Window after losing solid contact (or angle deviating > 45°) in which a release still fires.
+    public const float LostContactGraceSeconds = 0.5f;
+    // Friction multiplier applied to all banana fixtures while charging (any sub-state).
+    public const float ChargingFrictionMultiplier = 2f;
+    // At max charge, sprite is squashed to (1 - MaxSquishDepth) along the squish axis.
+    public const float MaxSquishDepth = 0.3f;
+    // Precomputed cos(45°): two unit vectors are within 45° iff Dot(a,b) >= this.
+    public const float MaxJumpAngleDeviationDegrees = 45f;
+    public static readonly float MaxJumpAngleDeviationCosine =
+        (float)System.Math.Cos(MaxJumpAngleDeviationDegrees * System.Math.PI / 180.0);
+
     public const float CameraDeadzoneRadiusPixels = 80f;
     // Higher = camera catches up faster. Frame-rate independent (per-second exponential decay).
     public const float CameraSmoothRatePerSecond = 6f;
@@ -48,14 +67,9 @@ public static class PhysicsConstants
     };
 
     public static readonly (Vector2 OffsetMeters, float RadiusMeters)[] BananaCircles;
+    // Centroid in sprite-local pixel space. Use as SpriteBatch.Draw `origin` so the body
+    // centroid pivots on its screen position under arbitrary rotation/scale.
     public static readonly Vector2 BananaSpriteOriginPixels;
-
-    // PPM rotates sprites around their integer-divided center. To make the physics centroid
-    // (the body origin) land on the body's screen position, we offset the draw position by
-    // the rotated vector from centroid to sprite-center.
-    public static readonly Vector2 BananaSpriteCenterPixels =
-        new Vector2(BananaSpriteWidthPixels / 2, BananaSpriteHeightPixels / 2);
-    public static readonly Vector2 BananaSpriteCenterMinusCentroidPixels;
 
     static PhysicsConstants()
     {
@@ -89,8 +103,6 @@ public static class PhysicsConstants
                 radiiPx[i] * MetersPerPixel
             );
         }
-
-        BananaSpriteCenterMinusCentroidPixels = BananaSpriteCenterPixels - BananaSpriteOriginPixels;
     }
 
     public static Vector2 ToMeters(Vector2 pixels) => pixels * MetersPerPixel;

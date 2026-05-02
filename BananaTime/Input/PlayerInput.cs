@@ -36,6 +36,7 @@ public sealed class PlayerInput : IServiceInput
     public Direction? DirectionPressed { get; private set; }
     public bool AcceptPressed { get; private set; }
     public bool JumpBuffered => _jumpBufferRemainingSeconds > 0f;
+    public bool JumpHeld { get; private set; }
 
     public PlayerInput()
     {
@@ -83,6 +84,18 @@ public sealed class PlayerInput : IServiceInput
 
         AcceptPressed = ComputeAcceptPressed();
         RotateClockwise = ComputeRotateClockwise();
+        JumpHeld = ComputeJumpHeld();
+    }
+
+    private bool ComputeJumpHeld()
+    {
+        if (AnyDown(JumpKeys)) return true;
+        for (int i = 0; i < 4; i++)
+        {
+            if (!_pads[i].IsConnected) continue;
+            if (_pads[i].Buttons.A == ButtonState.Pressed) return true;
+        }
+        return false;
     }
 
     private bool JumpNewlyPressed()

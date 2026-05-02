@@ -161,3 +161,41 @@ With the build green, launch and roll the banana for >6 s to fill the buffer, pr
 - [ ] `F6` debug overlay during rewind: the `grounded` / `angVel` / `linVel` text remains readable (it's part of `DrawHud` so should be unshaded). The debug `DrawTerrain` lines (if enabled) render through the shader along with the rest of the world — confirm they're visible enough to still be useful, or note in the PR if Open Decision #5 should flip.
 - [ ] Pause-on-defocus (`LostFocus`) during rewind: tab away mid-rewind and back. No crash. (Not strictly a shader concern, but the shader scope shouldn't break the existing pause path.)
 - [ ] Editor still works (open level editor from the title menu, edit and save). Editor draws aren't gated on `IsRewinding` so the shader never engages there — confirm by inspection.
+
+## Learnings
+
+### Architectural decisions
+
+- **Open Decisions resolved with the listed defaults**: tuned-by-feel intensity (#1), `gameTime.TotalGameTime.TotalSeconds` as the time source (#2), instant on/off — no fade (#3), `Content/Shaders/` as the file location (#4), debug terrain drawn inside the shader scope (#5).
+- **`DrawWorld()` extracted as a private helper** (per the ticket's preferred factoring). Avoids duplicating the four-line draw sequence between the rewind-on and rewind-off branches; the only difference between the branches is the `using` wrapper.
+- **Shader is PS-only** — relies on SpriteBatch's default vertex shader (which handles the world-view-projection matrix). The ticket allowed either approach; PS-only is the more common MonoGame-SpriteBatch idiom and avoids having to re-implement the matrix transform in a custom VS.
+- **Standard `SpriteTexture` / `SpriteTextureSampler` naming** follows the MonoGame content-pipeline `.fx` template — same convention used by `dotnet new mgcontent` shader templates, so future contributors will recognize the layout.
+
+### Problems encountered
+
+- None during initial implementation — shader compiled clean on first MGCB pass and the build log shows `Shaders/VcrRewind.fx` processed by `EffectProcessor` as expected.
+
+### Interesting tidbits
+
+- `WithSceneShader` (PPM 8.2) renders into a pooled, layer-sized render target and composites at `Dispose` time. That's why the pixel shader can sample neighboring scene content for chroma/jitter — at PS run time the source texture is the assembled world layer, not individual draw-call textures.
+- The `Effect.Parameters["X"].SetValue(...)` API throws on missing names. The configure callback runs on every wrapped `Begin` (every frame while rewinding). Keeping shader uniforms and the C# `SetValue` calls aligned is enforced at runtime, not build time — a typo only surfaces during the first rewind. Verified clean by the test plan.
+- The MGCB `EffectImporter` / `EffectProcessor` stanza accepts no texture-style processor params (no `ColorKey`, `PremultiplyAlpha`, etc.). Only `DebugMode=Auto` is wired. Pasting a texture stanza and renaming the path would have failed; the ticket's "do not paste a texture stanza" note was load-bearing.
+- The shader's `frac(sin(dot(...)) * 43758.5453)` hash is a well-known cheap pseudo-noise idiom — works fine on SM2 / `ps_3_0` and translates cleanly through MojoShader to GLSL on DesktopGL. No texture-based noise lookup needed.
+
+### Workarounds / limitations
+
+- `Time` is `(float)gameTime.TotalGameTime.TotalSeconds` cast from a `double`. Float precision of `Time` degrades after ~hours of play (single precision starts losing sub-frame resolution past 16777216 seconds, but the noise/sin patterns visibly stop scrolling well before that — practically a non-issue for a game-jam game with short sessions).
+- Effect is hard-coded against the 640×360 internal resolution (e.g., scanline density, hash row count). If `Width`/`Height` ever changes, the visual will need re-tuning. Not exposed as uniforms because nothing else changes resolution.
+
+### Related areas affected
+
+- `Playing.Draw` refactored into `Draw` + `DrawWorld` private helper — a cleanup that's mildly nice independent of the shader (clearer separation of world vs. HUD layers). No other callers.
+- `Content.mgcb` now has its first non-texture entry; pattern is a useful reference for future shader/effect adds.
+- `Program.cs` `AddAssets([...])` learns about `PixelShaderMeta` for the first time.
+
+### Rejected alternatives
+
+- **Custom vertex shader passthrough**: ticket allowed it; rejected as unnecessary complexity. SpriteBatch's default VS handles the projection. Including a VS would force re-implementing the world-view-projection transform.
+- **`_rewindElapsedSeconds` accumulator** (Open Decision #2 alt): rejected — the effect animates continuously off `Time` and doesn't need a 0-based clock per rewind. Default `TotalGameTime` is one less field on `Playing`.
+- **Fade-in/out via `Intensity` uniform** (Open Decision #3 alt): rejected — 3 s rewind is short, fades would steal a meaningful slice. Easy to add later if instant-on feels harsh.
+- **Settings toggle for motion sensitivity**: explicitly out of scope. If accessibility matters later, expose `Intensity = 0.0` as the off path.

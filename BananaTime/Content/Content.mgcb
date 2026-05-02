@@ -61,3 +61,9 @@
 /processorParam:TextureFormat=Color
 /build:Graphics/StoneHenge.jpg
 
+#begin Shaders/VcrRewind.fx
+/importer:EffectImporter
+/processor:EffectProcessor
+/processorParam:DebugMode=Auto
+/build:Shaders/VcrRewind.fx
+
