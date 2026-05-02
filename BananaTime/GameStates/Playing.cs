@@ -1,3 +1,4 @@
+using BananaTime.Levels;
 using BananaTime.Physics;
 using BenMakesGames.PlayPlayMini;
 using BenMakesGames.PlayPlayMini.Services;
@@ -9,7 +10,9 @@ using AetherVector2 = nkast.Aether.Physics2D.Common.Vector2;
 
 namespace BananaTime.GameStates;
 
-public sealed class Playing: GameState
+public sealed record PlayingConfig(LevelData Level);
+
+public sealed class Playing: GameState<PlayingConfig>
 {
     private GraphicsManager Graphics { get; }
     private GameStateManager GSM { get; }
@@ -22,13 +25,15 @@ public sealed class Playing: GameState
 
     private World World;
     private Banana Banana;
-    private TestTerrain Terrain;
+    private LevelTerrain Terrain;
     private Camera Camera;
+    private readonly string PictureName;
 
     private bool RotateCWHeld;
     private bool RotateCCWHeld;
     private bool JumpQueued;
     private bool RewindQueued;
+    private bool ShowDebugInfo;
 
     private readonly BananaSnapshot[] RewindBuffer = new BananaSnapshot[PhysicsConstants.RewindFrames];
     private int RewindHead;
@@ -36,24 +41,25 @@ public sealed class Playing: GameState
     private int RewindReadIndex;
     private bool IsRewinding;
 
-    public Playing(GraphicsManager graphics, GameStateManager gsm, MouseManager mouse, KeyboardManager keyboard)
+    public Playing(PlayingConfig config, GraphicsManager graphics, GameStateManager gsm, MouseManager mouse, KeyboardManager keyboard)
     {
         Graphics = graphics;
         GSM = gsm;
         Mouse = mouse;
         Keyboard = keyboard;
 
+        PictureName = config.Level.Picture;
+
         World = new World(new AetherVector2(0f, PhysicsConstants.Gravity));
-        Terrain = new TestTerrain(World);
-        Banana = new Banana(World, SpawnMeters());
+        Terrain = new LevelTerrain(World, config.Level);
+        Banana = new Banana(World, config.Level.StartPosition * PhysicsConstants.MetersPerPixel);
         Camera = new Camera(new Vector2(Graphics.Width, Graphics.Height), Banana.PositionPixels);
     }
 
-    private static Vector2 SpawnMeters()
-        => new Vector2(120f, 60f) * PhysicsConstants.MetersPerPixel;
-
     public override void Input(GameTime gameTime)
     {
+        if (Keyboard.PressedKey(Keys.F6)) ShowDebugInfo = !ShowDebugInfo;
+
         if (IsRewinding)
         {
             RotateCWHeld = false;
@@ -155,16 +161,29 @@ public sealed class Playing: GameState
     {
         Graphics.Clear(new Color(40, 40, 60));
 
-        DrawTerrain();
+        DrawBackground();
+        if (ShowDebugInfo) DrawTerrain();
         DrawBanana();
         DrawHud();
     }
 
+    private void DrawBackground()
+    {
+        if (!Graphics.Pictures.ContainsKey(PictureName)) return;
+        var origin = Camera.WorldToScreen(Vector2.Zero);
+        Graphics.DrawPicture(PictureName, (int)origin.X, (int)origin.Y);
+    }
+
     private void DrawTerrain()
     {
-        var verts = Terrain.VerticesPixels;
-        for (int i = 0; i < verts.Length - 1; i++)
-            DrawLine(Camera.WorldToScreen(verts[i]), Camera.WorldToScreen(verts[i + 1]), Color.LimeGreen, 2f);
+        foreach (var shape in Terrain.ShapesPixels)
+        {
+            for (int i = 0; i < shape.Length - 1; i++)
+                DrawLine(Camera.WorldToScreen(shape[i]), Camera.WorldToScreen(shape[i + 1]), Color.LimeGreen, 2f);
+
+            if (shape.Length >= 3)
+                DrawLine(Camera.WorldToScreen(shape[^1]), Camera.WorldToScreen(shape[0]), Color.LimeGreen, 2f);
+        }
     }
 
     private void DrawBanana()
@@ -182,16 +201,22 @@ public sealed class Playing: GameState
 
         Graphics.DrawPictureRotatedAndScaled("Banana", (int)drawCenter.X, (int)drawCenter.Y, rot, 1f, Color.White);
 
-        // Mark centroid (body origin) for debug.
-        Graphics.DrawFilledRectangle((int)bananaScreenPx.X - 1, (int)bananaScreenPx.Y - 1, 2, 2, Color.Red);
+        if (ShowDebugInfo)
+        {
+            // Mark centroid (body origin) for debug.
+            Graphics.DrawFilledRectangle((int)bananaScreenPx.X - 1, (int)bananaScreenPx.Y - 1, 2, 2, Color.Red);
+        }
     }
 
     private void DrawHud()
     {
-        var grounded = Banana.IsGrounded();
-        Graphics.DrawText("Font", 4, 4, $"grounded: {grounded}", Color.White);
-        Graphics.DrawText("Font", 4, 14, $"angVel: {Banana.Body.AngularVelocity:0.00}", Color.White);
-        Graphics.DrawText("Font", 4, 24, $"linVel: ({Banana.Body.LinearVelocity.X:0.00}, {Banana.Body.LinearVelocity.Y:0.00})", Color.White);
+        if (ShowDebugInfo)
+        {
+            var grounded = Banana.IsGrounded();
+            Graphics.DrawText("Font", 4, 4, $"grounded: {grounded}", Color.White);
+            Graphics.DrawText("Font", 4, 14, $"angVel: {Banana.Body.AngularVelocity:0.00}", Color.White);
+            Graphics.DrawText("Font", 4, 24, $"linVel: ({Banana.Body.LinearVelocity.X:0.00}, {Banana.Body.LinearVelocity.Y:0.00})", Color.White);
+        }
 
         if (IsRewinding)
         {

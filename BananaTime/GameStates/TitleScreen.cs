@@ -1,3 +1,6 @@
+using System;
+using System.IO;
+using BananaTime.Levels;
 using BananaTime.UI;
 using BenMakesGames.PlayPlayMini;
 using BenMakesGames.PlayPlayMini.Services;
@@ -21,11 +24,18 @@ public sealed class TitleScreen: GameState
 
         Menu = new Menu(new MenuItem[]
         {
-            new("Start", () => GSM.ChangeState<Playing>()),
+            new("Start", StartStoneHenge),
             new("New Level", () => GSM.ChangeState<LevelPicker>()),
             new("Edit Saved Level", () => GSM.ChangeState<SavedLevelPicker>()),
             new("Quit", () => GSM.Exit()),
         });
+    }
+
+    private void StartStoneHenge()
+    {
+        var path = Path.Combine(AppContext.BaseDirectory, "Content", "Levels", "StoneHenge.json");
+        var level = LevelStorage.Load(path);
+        GSM.ChangeState<Playing, PlayingConfig>(new PlayingConfig(level));
     }
 
     public override void Input(GameTime gameTime)
