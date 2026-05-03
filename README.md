@@ -15,7 +15,7 @@ I considered deleting this repo, but then thought "I dunno - I did some interest
 
 * be a plantain doing difficult platforming over Stone Henge, I guess?
 * WASD, arrow keys, numpad, and gamepad support
-* rewund time feature - press R to rewind time 6 seconds (with a fun VCR pixel shader)
+* rewind time feature - press R to rewind time 6 seconds (with a fun VCR pixel shader)
 
 #### level editor
 
